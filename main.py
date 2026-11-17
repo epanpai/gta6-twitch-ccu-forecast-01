@@ -28,7 +28,9 @@
 #      is 700k than a game whose hour 1 was 400.
 #   3. For each hour, form two estimates of the five quantiles of L_h:
 #      (a) a normal estimate from the kernel-weighted mean and standard
-#          deviation (effective-sample-size corrected, sd floored at 0.10),
+#          deviation (effective-sample-size corrected, sd floored at 0.10,
+#          and widened up to 2x when fewer than 5 comparables effectively
+#          carry weight at that hour),
 #      (b) the kernel-weighted empirical quantiles. Blend them 50/50.
 #      The blend is deliberate: the normal part is stable when only a few
 #      comparables carry weight; the empirical part keeps the real skew
@@ -198,6 +200,13 @@ def kernel_quantiles(pool: list[dict], p1: float) -> dict[int, list[float]]:
             continue
         mu, sd = weighted_mean_sd(pairs)
         sd = max(sd, SD_FLOOR)
+        # Few comparables carry weight at this hour (a case whose hour-1
+        # print sits far from every launch in the pool): widen the normal
+        # component, so the forecast stays honest about how little it knows.
+        total_w = sum(w for _, w in pairs)
+        ess = total_w * total_w / sum(w * w for _, w in pairs)
+        if ess < 5:
+            sd *= min(2.0, math.sqrt(5.0 / max(ess, 1.0)))
         normal_q = [mu + z * sd for z in Z]
         empirical_q = [weighted_quantile(pairs, p) for p in LEVELS]
         raw[h] = [(a + b) / 2.0 for a, b in zip(normal_q, empirical_q)]
